@@ -1,10 +1,10 @@
-name: Clone All Supported Repositories
+name: Fetch repos data
 
 on:
   workflow_dispatch:
 
 jobs:
-  clone-supported-repos:
+  process-repos:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout this repository
@@ -14,7 +14,33 @@ jobs:
         run: |
           echo "Reading supported repositories from supported-repos.json..."
           repos=$(jq -r '.[]' supported-repos.json)
+          mkdir -p Processing
           for repo in $repos; do
             echo "Cloning $repo"
             git clone https://github.com/$repo.git
+            reponame=$(basename $repo)
+            mkdir -p Processing/$reponame
+
+            # Try to copy RepoInfo.json if it exists
+            if [ -f "$reponame/RepoInfo.json" ]; then
+              cp "$reponame/RepoInfo.json" "Processing/$reponame/"
+            fi
+
+            # Try to copy CODEOWNERS if it exists
+            if [ -f "$reponame/CODEOWNERS" ]; then
+              cp "$reponame/CODEOWNERS" "Processing/$reponame/"
+            fi
+
+            # If RepoInfo.json exists, check for "docs" key and copy docs folder if present
+            if [ -f "$reponame/RepoInfo.json" ]; then
+              docspath=$(jq -r 'select(.docs != null) | .docs' "$reponame/RepoInfo.json")
+              if [ "$docspath" != "" ] && [ -e "$reponame/$docspath" ]; then
+                if [ -d "$reponame/$docspath" ]; then
+                  cp -r "$reponame/$docspath" "Processing/$reponame/"
+                elif [ -f "$reponame/$docspath" ]; then
+                  cp "$reponame/$docspath" "Processing/$reponame/"
+                fi
+              fi
+            fi
           done
+          ls -R
