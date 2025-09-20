@@ -1,15 +1,3 @@
-name: Fetch repos data
-
-on:
-  workflow_dispatch:
-
-jobs:
-  process-repos:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout this repository
-        uses: actions/checkout@v4
-
       - name: Read supported repositories and clone them
         run: |
           echo "Reading supported repositories from supported-repos.json..."
@@ -31,14 +19,28 @@ jobs:
               cp "$reponame/CODEOWNERS" "Processing/$reponame/"
             fi
 
-            # If RepoInfo.json exists, check for "docs" key and copy docs folder if present
+            # If RepoInfo.json exists, check for "docs" key and copy docs folder/files if present
             if [ -f "$reponame/RepoInfo.json" ]; then
-              docspath=$(jq -r 'select(.docs != null) | .docs' "$reponame/RepoInfo.json")
-              if [ "$docspath" != "" ] && [ -e "$reponame/$docspath" ]; then
-                if [ -d "$reponame/$docspath" ]; then
-                  cp -r "$reponame/$docspath" "Processing/$reponame/"
-                elif [ -f "$reponame/$docspath" ]; then
-                  cp "$reponame/$docspath" "Processing/$reponame/"
+              if jq -e '.docs | type == "array"' "$reponame/RepoInfo.json" > /dev/null; then
+                # Loop through the array and copy each entry
+                for docentry in $(jq -r '.docs[]' "$reponame/RepoInfo.json"); do
+                  if [ -e "$reponame/$docentry" ]; then
+                    if [ -d "$reponame/$docentry" ]; then
+                      cp -r "$reponame/$docentry" "Processing/$reponame/"
+                    elif [ -f "$reponame/$docentry" ]; then
+                      mkdir -p "Processing/$reponame/$(dirname $docentry)"
+                      cp "$reponame/$docentry" "Processing/$reponame/$docentry"
+                    fi
+                  fi
+                done
+              else
+                docspath=$(jq -r 'select(.docs != null) | .docs' "$reponame/RepoInfo.json")
+                if [ "$docspath" != "" ] && [ -e "$reponame/$docspath" ]; then
+                  if [ -d "$reponame/$docspath" ]; then
+                    cp -r "$reponame/$docspath" "Processing/$reponame/"
+                  elif [ -f "$reponame/$docspath" ]; then
+                    cp "$reponame/$docspath" "Processing/$reponame/"
+                  fi
                 fi
               fi
             fi
