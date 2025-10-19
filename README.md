@@ -33,11 +33,11 @@
 
 that defines 2 vectors fields: 
 
-- `embedding` - consists of general application details
+* `embedding` - consists of general application details
 
 Includes the following fields: `repo` (github link), `name` (application name), `team`, `summary`, `owners` (codeowners), `responsibilities`, `tags`, `dependencies`
 	
-- `docsEmbedding` - consists of summary for found documentation
+* `docsEmbedding` - consists of summary for found documentation
 
 # Application components
 
@@ -56,7 +56,7 @@ Provides a way to test MCP server locally.
 # How to use RAG
 
 1. Run API application via `Scalar` UI.
-2. Run `ReportAISummary.Mcp.Client` shell based application and MCP client.
+2. Run `ReportAISummary.Mcp.Client` shell based application as MCP client.
 3. Attach created MCP server to any AI aware env like cursor AI, Visual Studio, Github copilot and so on.
 
 # Supported Functionality
