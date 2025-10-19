@@ -47,8 +47,14 @@ Represents a vector storage for RAG.
 
 ## MCP server
 
-Provides RAG functionality to AI models
+Provides RAG functionality to AI models.
 
 ## ReportAISummary Mcp Client
 
-Provides a way to test MCP server locally
+Provides a way to test MCP server locally.
+
+# How to use RAG
+
+1. Run API application via `Scalar` UI.
+2. Run `ReportAISummary.Mcp.Client` shell based application and MCP client.
+3. Attach created MCP server to any AI aware env like cursor AI, Visual Studio, Github copilot and so on.
