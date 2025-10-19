@@ -33,11 +33,11 @@
 
 that defines 2 vectors fields: 
 
-	- `embedding` - consists of general application details
+- `embedding` - consists of general application details
 
 Includes the following fields: `repo` (github link), `name` (application name), `team`, `summary`, `owners` (codeowners), `responsibilities`, `tags`, `dependencies`
 	
-	- `docsEmbedding` - consists of summary for found documentation
+- `docsEmbedding` - consists of summary for found documentation
 
 # Application components
 
@@ -58,3 +58,16 @@ Provides a way to test MCP server locally.
 1. Run API application via `Scalar` UI.
 2. Run `ReportAISummary.Mcp.Client` shell based application and MCP client.
 3. Attach created MCP server to any AI aware env like cursor AI, Visual Studio, Github copilot and so on.
+
+# Supported Functionality
+
+1. Repository Parsing: Automatically parses GitHub repositories listed in supported-repos.json and stores the extracted data in vector storage for efficient semantic querying.
+
+2. MCP Integration: Provides Model Context Protocol (MCP)–based endpoints to ask questions and retrieve insights from the previously indexed repository data.
+
+# Future plans
+
+1. Make indexing github repository data fully async.
+2. Make RAG querying more precise including better `score` values.
+3. Clarify components and env. Is MongoDB the best option here? Deploy to target ecosystem.
+4. Add tests.
