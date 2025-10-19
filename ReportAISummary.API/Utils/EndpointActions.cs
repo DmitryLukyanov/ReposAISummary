@@ -3,7 +3,6 @@ using ModelContextProtocol.Server;
 using MongoDB.Bson;
 using ReportAISummary.API.Config;
 using ReportAISummary.API.Models;
-using System.Collections.Generic;
 using System.ComponentModel;
 
 namespace ReportAISummary.API.Utils
@@ -20,9 +19,10 @@ namespace ReportAISummary.API.Utils
             services.AddScoped<EndpointActions>();
         }
 
+        // TODO: make it logically async
         public async Task RefreshReposState(string[] supportedRepos)
         {
-            var requests = new List<RepoProfileRequest>();
+            //var requests = new List<RepoProfileRequest>();
             var workingPath = Path.GetFullPath(
                 Path.Combine(
                     [
@@ -30,62 +30,70 @@ namespace ReportAISummary.API.Utils
                     "ClonedRepos",
                     DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString()
                     ]));
+
+            List<Task<RepoProfileRequest>> tasks = [];
             foreach (var repo in supportedRepos)
             {
-                var cloneOutput = gitUtils.CloneRepo(repo, workingPath: workingPath);
-                var codeownersString = await GetFileContent(Path.Combine(cloneOutput, "CODEOWNERS"));
-
-                /*
-                    "name": "payments-service",
-                    "summary": "Payment service for Adyen",
-                    "team": "payments-platform",
-                    "responsibilities": ["create-payment", "refund"],
-                    "dependencies": ["ledger-service", "fx-rate-service"],
-                    "tags": ["dotnet", "kafka"],
-                    "docs": ["docs/overview.md"]
-                 */
-                var repoInfoString = await GetFileContent(Path.Combine(cloneOutput, "RepoInfo.json"));
-                string? summary = string.Empty;
-                string? team = string.Empty;
-                string? name = string.Empty;
-                string[]? responsibilities = null;
-                string[]? dependencies = null;
-                string[]? tags = null;
-                List<string>? docs = [];
-                if (!string.IsNullOrWhiteSpace(repoInfoString))
+                tasks.Add(Task.Run<RepoProfileRequest>(async () =>
                 {
-                    var deserialized = BsonDocument.Parse(repoInfoString);
-                    summary = deserialized?.GetValue("summary", defaultValue: null)?.AsString;
-                    team = deserialized?.GetValue("team", defaultValue: null)?.AsString;
-                    name = deserialized?.GetValue("name", defaultValue: null)?.AsString;
-                    responsibilities = deserialized?.GetValue("responsibilities", defaultValue: null)?.AsBsonArray?.Select(x => x.AsString).ToArray();
-                    dependencies = deserialized?.GetValue("dependencies", defaultValue: null)?.AsBsonArray?.Select(x => x.AsString).ToArray();
-                    tags = deserialized?.GetValue("tags", defaultValue: null)?.AsBsonArray?.Select(x => x.AsString).ToArray();
-                    var docsPaths = deserialized?.GetValue("docs", defaultValue: null)?.AsBsonArray?.Select(x => x.AsString).ToArray();
-                    if (docsPaths != null && docsPaths.Length != 0)
+                    var cloneOutput = gitUtils.CloneRepo(repo, workingPath: workingPath);
+                    var codeownersString = await GetFileContent(Path.Combine(cloneOutput, "CODEOWNERS"));
+
+                    /*
+                        "name": "payments-service",
+                        "summary": "Payment service for Adyen",
+                        "team": "payments-platform",
+                        "responsibilities": ["create-payment", "refund"],
+                        "dependencies": ["ledger-service", "fx-rate-service"],
+                        "tags": ["dotnet", "kafka"],
+                        "docs": ["docs/overview.md"]
+                     */
+                    var repoInfoString = await GetFileContent(Path.Combine(cloneOutput, "RepoInfo.json"));
+                    string? summary = string.Empty;
+                    string? team = string.Empty;
+                    string? name = string.Empty;
+                    string[]? responsibilities = null;
+                    string[]? dependencies = null;
+                    string[]? tags = null;
+                    List<string>? docs = [];
+                    if (!string.IsNullOrWhiteSpace(repoInfoString))
                     {
-                        foreach (var docPath in docsPaths)
+                        var deserialized = BsonDocument.Parse(repoInfoString);
+                        summary = deserialized?.GetValue("summary", defaultValue: null)?.AsString;
+                        team = deserialized?.GetValue("team", defaultValue: null)?.AsString;
+                        name = deserialized?.GetValue("name", defaultValue: null)?.AsString;
+                        responsibilities = deserialized?.GetValue("responsibilities", defaultValue: null)?.AsBsonArray?.Select(x => x.AsString).ToArray();
+                        dependencies = deserialized?.GetValue("dependencies", defaultValue: null)?.AsBsonArray?.Select(x => x.AsString).ToArray();
+                        tags = deserialized?.GetValue("tags", defaultValue: null)?.AsBsonArray?.Select(x => x.AsString).ToArray();
+                        var docsPaths = deserialized?.GetValue("docs", defaultValue: null)?.AsBsonArray?.Select(x => x.AsString).ToArray();
+                        if (docsPaths != null && docsPaths.Length != 0)
                         {
-                            var docContent = await GetFileContent(Path.Combine(cloneOutput, docPath));
-                            var docSummary = await aiUtils.SummarizeContent(docContent!);
-                            docs.Add(docSummary);
+                            foreach (var docPath in docsPaths)
+                            {
+                                var docContent = await GetFileContent(Path.Combine(cloneOutput, docPath));
+                                var docSummary = await aiUtils.SummarizeContent(docContent!);
+                                docs.Add(docSummary);
+                            }
                         }
                     }
-                }
 
-                var repoInfo = new RepoProfileRequest(
-                    repo: repo,
-                    name: name, 
-                    team: team, 
-                    summary: summary, 
-                    owners: codeownersString?.Split('\n', StringSplitOptions.RemoveEmptyEntries), 
-                    responsibilities: responsibilities,
-                    dependencies: dependencies,
-                    tags: tags,
-                    docs: docs);
-                requests.Add(repoInfo);
+                    var repoInfo = new RepoProfileRequest(
+                        repo: repo,
+                        name: name,
+                        team: team,
+                        summary: summary,
+                        owners: codeownersString?.Split('\n', StringSplitOptions.RemoveEmptyEntries),
+                        responsibilities: responsibilities,
+                        dependencies: dependencies,
+                        tags: tags,
+                        docs: docs);
+                    return repoInfo;
+                }));
             }
-            var repoInfos = new UpdateReposStateRequest(requests);
+
+            await Task.WhenAll(tasks);
+
+            var repoInfos = new UpdateReposStateRequest(tasks.Select(t => t.Result));
             await mongoDbUtils.SaveRequest(repoInfos);
 
             static async Task<string?> GetFileContent(string path)

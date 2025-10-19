@@ -39,7 +39,7 @@ namespace ReportAISummary.API.Utils
 
         public async Task SaveRequest(UpdateReposStateRequest request)
         {
-            var models = new List<WriteModel<RepoProfileDto>>(request.Items.Count);
+            var models = new List<WriteModel<RepoProfileDto>>(request.Items.Count());
 
             foreach (var i in request.Items)
             {
@@ -78,7 +78,7 @@ namespace ReportAISummary.API.Utils
             }
 
             var bulkResult = await collection.BulkWriteAsync(models, new BulkWriteOptions { IsOrdered = false });
-            if (bulkResult.ProcessedRequests.Count != request.Items.Count)
+            if (bulkResult.ProcessedRequests.Count != request.Items.Count())
             {
                 // TODO: updating has been failed, do something
             }
@@ -103,7 +103,7 @@ namespace ReportAISummary.API.Utils
                 .VectorSearch(
                     field: e => e.Embedding,
                     queryVector: new QueryVector(new ReadOnlyMemory<double>(searchVector)),
-                    limit: limit,//askRequest.K is > 0 and <= 100 ? askRequest.K : 8,
+                    limit: limit,
                     options: new VectorSearchOptions<RepoProfileDto>
                     {
                         NumberOfCandidates = 100,

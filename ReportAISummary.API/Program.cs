@@ -75,7 +75,7 @@ app.MapPost(
     .WithName(nameof(EndpointActions.AskQuestionAboutGithubRepos))
     // TODO: add example for question
     .WithTags("repo-state")
-    .WithDescription("Asking is currently supported about: ['repo', 'team', 'summary', 'owners', 'responsibilities']");
+    .WithDescription("Asking is currently supported only about: ['repo', 'team', 'summary', 'owners', 'responsibilities']");
 
 app.MapGet(
     pattern: "/repos",

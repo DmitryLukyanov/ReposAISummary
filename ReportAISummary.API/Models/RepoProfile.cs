@@ -136,5 +136,5 @@ namespace ReportAISummary.API.Models
         public double Score { get; init; } = score;
     }
 
-    public record UpdateReposStateRequest(List<RepoProfileRequest> Items);
+    public record UpdateReposStateRequest(IEnumerable<RepoProfileRequest> Items);
 }
