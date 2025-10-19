@@ -125,7 +125,7 @@ namespace ReportAISummary.API.Utils
 
         [McpServerTool(Name = nameof(GetProcessedGithubRepos))]
         [Description("Get the list of github repositories that were previously processed and which state there is information about.")]
-        [return: Description("The list of github repositories that were previously processed and which state there is information about.")]
+        [return: Description("The list of github repositories that were previously processed and which state there is information about. NOTE: The property 'score' with -1 value means that the value has been writen directly from database, so this value has no meaning here. It's safe to ignore it")]
         public async Task<IEnumerable<string>> GetProcessedGithubRepos([Description("The limit github repositories to return state for")] int? limit)
         {
             var processedRepos = await mongoDbUtils.GetProcessedRepos(limit);

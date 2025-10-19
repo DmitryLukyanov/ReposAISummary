@@ -39,11 +39,12 @@ namespace ReportAISummary.API.Utils
 
         public async Task SaveRequest(UpdateReposStateRequest request)
         {
-            var models = new List<WriteModel<RepoProfileDto>>(request.Items.Count());
+            var models = new List<WriteModel<RepoProfileDto>>(capacity: request.Items.Count());
 
             foreach (var i in request.Items)
             {
-                var embedding = await aiUtils.GetEmbeddingAsync(i.BuildSearchText());
+                var generalEmbedding = await aiUtils.GetEmbeddingAsync(i.BuildGeneralEmbedding());
+                var docsEmbedding = await aiUtils.GetEmbeddingAsync(i.BuildDocummentationsEmbedding());
 
                 var rp = new RepoProfileDto(
                     Repo: i.Repo,
@@ -56,14 +57,15 @@ namespace ReportAISummary.API.Utils
                     Tags: i.Tags,
                     Docs: i.Docs)
                 {
-                    Embedding = embedding,
+                    Embedding = generalEmbedding,
+                    DocsEmbedding = docsEmbedding
                 };
 
                 var filter = Builders<RepoProfileDto>.Filter.And(
                     Builders<RepoProfileDto>.Filter.Eq(x => x.Repo, rp.Repo)
                 );
 
-                var updateDefinition= Builders<RepoProfileDto>.Update
+                var updateDefinition = Builders<RepoProfileDto>.Update
                     .Set(x => x.Name, rp.Name)
                     .Set(x => x.Team, rp.Team)
                     .Set(x => x.Summary, rp.Summary)
@@ -72,7 +74,8 @@ namespace ReportAISummary.API.Utils
                     .Set(x => x.Dependencies, rp.Dependencies)
                     .Set(x => x.Tags, rp.Tags)
                     .Set(x => x.Docs, rp.Docs)
-                    .Set(x => x.Embedding, rp.Embedding);
+                    .Set(x => x.Embedding, rp.Embedding)
+                    .Set(x => x.DocsEmbedding, rp.DocsEmbedding);
                 var update = new UpdateOneModel<RepoProfileDto>(filter, updateDefinition) { IsUpsert = true };
                 models.Add(update);
             }
@@ -85,8 +88,8 @@ namespace ReportAISummary.API.Utils
         }
 
         public async Task<IEnumerable<RepoProfileResponse>> VectorSearch(
-            string indexName, 
-            double[] searchVector, 
+            string indexName,
+            double[] searchVector,
             int limit,
             double minScore = 0.6,
             (
@@ -132,6 +135,7 @@ namespace ReportAISummary.API.Utils
                         Filter = preFilter
                     })
                 .Project(Builders<RepoProfileDto>.Projection
+                    .Include("_id")
                     .Include(x => x.Repo)
                     .Include(x => x.Name)
                     .Include(x => x.Summary)
@@ -141,29 +145,45 @@ namespace ReportAISummary.API.Utils
                     .Include(x => x.Responsibilities)
                     .Include(x => x.Dependencies)
                     .Include(x => x.Docs)
-                    .MetaVectorSearchScore("score"))
-                ;
+                    .MetaVectorSearchScore("score"));
 
             var cursor = await collection.AggregateAsync(vectorSearchPipeline);
-            var docs = await cursor.ToListAsync();
+            var resultDocuments = await cursor.ToListAsync();
 
-            return [.. docs
-                // TODO: fix deserialization
-                .Select(d => new RepoProfileResponse(
-                    repo: d.GetValue("repo", string.Empty).AsString,
-                    name: d.GetValue("name", string.Empty).AsString,
-                    team: d.GetValue("team", string.Empty).AsString,
-                    summary: d.GetValue("summary", string.Empty).AsString,
-                    owners: [.. d.GetValue("owners", new BsonArray()).AsBsonArray.Select(x => x.AsString)],
-                    responsibilities: [.. d.GetValue("responsibilities", new BsonArray()).AsBsonArray.Select(x => x.AsString)],
-                    dependencies: [.. d.GetValue("dependencies", new BsonArray()).AsBsonArray.Select(x => x.AsString)],
-                    tags: [.. d.GetValue("tags", new BsonArray()).AsBsonArray.Select(x => x.AsString)],
-                    docs: [.. d.GetValue("docs", new BsonArray()).AsBsonArray.Select(x => x.AsString)],
-                    score: d["score"].AsDouble))
+            var vectorDocumentationSearchPipeline = new EmptyPipelineDefinition<RepoProfileDto>()
+                 .VectorSearch(
+                     field: e => e.DocsEmbedding,
+                     queryVector: new QueryVector(new ReadOnlyMemory<double>(searchVector)),
+                     limit: limit,
+                     options: new VectorSearchOptions<RepoProfileDto>
+                     {
+                         NumberOfCandidates = 100,
+                         IndexName = indexName,
+                         Filter = preFilter
+                     })
+                 .Project(Builders<RepoProfileDto>.Projection
+                     .Include("_id")
+                     .Include(x => x.Repo)
+                     .Include(x => x.Name)
+                     .Include(x => x.Summary)
+                     .Include(x => x.Team)
+                     .Include(x => x.Tags)
+                     .Include(x => x.Owners)
+                     .Include(x => x.Responsibilities)
+                     .Include(x => x.Dependencies)
+                     .Include(x => x.Docs)
+                     .MetaVectorSearchScore("score"));
+
+            cursor = await collection.AggregateAsync(vectorDocumentationSearchPipeline);
+            // TODO: find a better way to merge two search results
+            resultDocuments.AddRange(await cursor.ToListAsync());
+            resultDocuments = [.. resultDocuments.DistinctBy(d => d.GetValue("_id"))];
+
+            return [.. DeserializeBsonDocument(resultDocuments)
                 // TODO: move this check on server side later
                 .Where(i => i.Score >= minScore)
-                .Where(i => 
-                    filter == null || 
+                .Where(i =>
+                    filter == null ||
                     Enumerable.SequenceEqual(i.Tags!, filter.Value.Tags!, StringComparer.OrdinalIgnoreCase) ||
                     Enumerable.SequenceEqual(i.Owners!, filter.Value.Owners!, StringComparer.OrdinalIgnoreCase))];
         }
@@ -175,9 +195,27 @@ namespace ReportAISummary.API.Utils
             var docs = await collection.Find(FilterDefinition<RepoProfileDto>.Empty)
                 .Project<RepoProfileDto>(Builders<RepoProfileDto>.Projection.Exclude(x => x.Embedding))
                 .Limit(take)
+                .As<BsonDocument>()
                 .ToListAsync();
 
-            return docs.Select(i => i.Repo);
+            return DeserializeBsonDocument(docs).Select(i => i.Repo);
+        }
+
+        private static IEnumerable<RepoProfileResponse> DeserializeBsonDocument(IEnumerable<BsonDocument> resultDocuments)
+        {
+            return resultDocuments
+                // TODO: fix ctors issue and use normal deserialization flow
+                .Select(d => new RepoProfileResponse(
+                    repo: d.GetValue("repo", string.Empty).AsString,
+                    name: d.GetValue("name", string.Empty).AsString,
+                    team: d.GetValue("team", string.Empty).AsString,
+                    summary: d.GetValue("summary", string.Empty).AsString,
+                    owners: [.. d.GetValue("owners", new BsonArray()).AsBsonArray.Select(x => x.AsString)],
+                    responsibilities: [.. d.GetValue("responsibilities", new BsonArray()).AsBsonArray.Select(x => x.AsString)],
+                    dependencies: [.. d.GetValue("dependencies", new BsonArray()).AsBsonArray.Select(x => x.AsString)],
+                    tags: [.. d.GetValue("tags", new BsonArray()).AsBsonArray.Select(x => x.AsString)],
+                    docs: [.. d.GetValue("docs", new BsonArray()).AsBsonArray.Select(x => x.AsString)],
+                    score: d.GetValue("score", new BsonDouble(-1)).AsDouble));
         }
     }
 }

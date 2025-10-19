@@ -24,6 +24,7 @@ namespace ReportAISummary.API.Models
     {
         public ObjectId Id { get; init; } = ObjectId.GenerateNewId();
         public IEnumerable<double>? Embedding { get; init; }
+        public IEnumerable<double>? DocsEmbedding { get; init; }
     }
 
     public class RepoProfileRequest
@@ -93,13 +94,13 @@ namespace ReportAISummary.API.Models
         public IEnumerable<string>? Dependencies => dependencies;
         public IEnumerable<string>? Tags => tags;
 
-        public string BuildSearchText()
+        public string BuildGeneralEmbedding()
         {
             var sb = new System.Text.StringBuilder();
             sb.AppendLine($"repo: {{{Repo}}}");
             if (!string.IsNullOrWhiteSpace(Name))
             {
-                sb.AppendLine($"name: {{{Name}}}");
+                sb.AppendLine($"application name: {{{Name}}}");
             }
             if (!string.IsNullOrWhiteSpace(Team)) 
             {
@@ -116,6 +117,27 @@ namespace ReportAISummary.API.Models
             if (Responsibilities != null && Responsibilities.Any())
             {
                 sb.AppendLine($"responsibilities: [{{{string.Join(",", Responsibilities)}}}]");
+            }
+            if (Tags != null && Tags.Any())
+            {
+                sb.AppendLine($"tags: [{{{string.Join(",", Tags)}}}]");
+            }
+            if (Dependencies != null && Dependencies.Any())
+            {
+                sb.AppendLine($"dependencies: [{{{string.Join(",", Dependencies)}}}]");
+            }
+            return sb.ToString();
+        }
+
+        public string BuildDocummentationsEmbedding()
+        {
+            var sb = new System.Text.StringBuilder();
+            if (Docs != null)
+            {
+                foreach (var doc in Docs)
+                {
+                    sb.AppendLine(doc);
+                }
             }
             return sb.ToString();
         }
