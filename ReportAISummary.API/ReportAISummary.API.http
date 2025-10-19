@@ -1,0 +1,6 @@
+@ReportAISummary.API_HostAddress = http://localhost:5177
+
+GET {{ReportAISummary.API_HostAddress}}/refresh-repos-state/
+Accept: application/json
+
+###
