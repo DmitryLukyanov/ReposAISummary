@@ -89,15 +89,36 @@ namespace ReportAISummary.API.Utils
             double[] searchVector, 
             int limit,
             double minScore = 0.6,
-            // TODO: must be moved to server side
-            (string? Repository,
+            (
+            // pre filtering
+            string? Repository,
             string? Name,
             string? Team,
+            // post filtering
             IEnumerable<string>? Owners,
             IEnumerable<string>? Tags)? filter = null)
         {
             ArgumentOutOfRangeException.ThrowIfLessThan(minScore, 0, paramName: nameof(minScore));
             ArgumentOutOfRangeException.ThrowIfGreaterThan(minScore, 1, paramName: nameof(minScore));
+
+            var preFilter = Builders<RepoProfileDto>.Filter.Empty;
+            if (filter.HasValue)
+            {
+                if (!string.IsNullOrWhiteSpace(filter.Value.Name))
+                {
+                    preFilter &= Builders<RepoProfileDto>.Filter.Eq(x => x.Name, filter.Value.Name);
+                }
+
+                if (!string.IsNullOrWhiteSpace(filter.Value.Team))
+                {
+                    preFilter &= Builders<RepoProfileDto>.Filter.Eq(x => x.Team, filter.Value.Team);
+                }
+
+                if (!string.IsNullOrWhiteSpace(filter.Value.Repository))
+                {
+                    preFilter &= Builders<RepoProfileDto>.Filter.Eq(x => x.Repo, filter.Value.Repository);
+                }
+            }
 
             var vectorSearchPipeline = new EmptyPipelineDefinition<RepoProfileDto>()
                 .VectorSearch(
@@ -108,9 +129,7 @@ namespace ReportAISummary.API.Utils
                     {
                         NumberOfCandidates = 100,
                         IndexName = indexName,
-                        // TODO: this pre-filter option requires specifying the filtered fields in the vector index definition
-                        // so move this filter to the client side for now
-                        //Filter = /*TODO*/
+                        Filter = preFilter
                     })
                 .Project(Builders<RepoProfileDto>.Projection
                     .Include(x => x.Repo)
@@ -145,9 +164,6 @@ namespace ReportAISummary.API.Utils
                 .Where(i => i.Score >= minScore)
                 .Where(i => 
                     filter == null || 
-                    i.Repo == filter.Value.Repository ||
-                    i.Team == filter.Value.Team ||
-                    i.Name == filter.Value.Name || 
                     Enumerable.SequenceEqual(i.Tags!, filter.Value.Tags!, StringComparer.OrdinalIgnoreCase) ||
                     Enumerable.SequenceEqual(i.Owners!, filter.Value.Owners!, StringComparer.OrdinalIgnoreCase))];
         }
