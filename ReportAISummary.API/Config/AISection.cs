@@ -10,5 +10,6 @@
         public required string VECTOR_DB_ENDPOINT { get; init; }
         public required string VECTOR_DB_COLLECTION { get; init; }
         public required string VECTOR_DB_INDEX_NAME { get; init; }
+        public required string MCP_ENDPOINT { get; init; }
     }
 }

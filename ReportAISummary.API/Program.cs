@@ -1,4 +1,6 @@
-﻿using ReportAISummary.API.Models;
+﻿using Microsoft.Extensions.Options;
+using ReportAISummary.API.Config;
+using ReportAISummary.API.Models;
 using ReportAISummary.API.Utils;
 using Scalar.AspNetCore;
 using System.Net;
@@ -10,6 +12,11 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi();
 builder.Services.AddCors();
+
+builder.Services
+    .AddMcpServer()
+    .WithHttpTransport()
+    .WithToolsFromAssembly();
 
 builder.Services.ConfigureHttpJsonOptions(opts =>
 {
@@ -29,7 +36,6 @@ app.MapScalarApiReference(options =>
     options.Title = "Repo Map API";
     options.Theme = ScalarTheme.Default;
 });
-app.UseHttpsRedirection();
 app.UseCors(p => p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
 
 app.MapPost(
@@ -48,6 +54,7 @@ app.MapPost(
 
         return Results.Ok(new { ok = true, cloned = supportedRepos });
     })
+    .WithName("RefreshGithubReposState")
     .WithTags("repo-state");
 
 app.MapPost(
@@ -62,20 +69,25 @@ app.MapPost(
             return Results.BadRequest(new { error = "question is empty" });
         }
 
-        var result = await endpointActions.AskQuestion(question, filter);
+        var result = await endpointActions.AskQuestionAboutGithubRepos(question, filter);
         return Results.Ok(new { result });
     })
+    .WithName(nameof(EndpointActions.AskQuestionAboutGithubRepos))
     // TODO: add example for question
     .WithTags("repo-state")
     .WithDescription("Asking is currently supported about: ['repo', 'team', 'summary', 'owners', 'responsibilities']");
 
 app.MapGet(
     pattern: "/repos",
-    handler: async (int? limit, MongoDbUtils mongoDbUtils) =>
+    handler: async (EndpointActions endpointActions, int? limit = null) =>
     {
-        var processedRepos = await mongoDbUtils.GetProcessedRepos(limit);
+        var processedRepos = await endpointActions.GetProcessedGithubRepos(limit);
         return Results.Ok(processedRepos);
     })
+    .WithName(nameof(EndpointActions.GetProcessedGithubRepos))
     .WithTags("repo-state");
 
-app.Run();
+app.MapMcp("mcp");
+
+var aiSection = app.Services.GetRequiredService<IOptions<AISection>>();
+app.Run(aiSection.Value.MCP_ENDPOINT);
