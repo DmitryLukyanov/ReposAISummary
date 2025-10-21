@@ -33,7 +33,7 @@ var app = builder.Build();
 app.MapOpenApi();
 app.MapScalarApiReference(options =>
 {
-    options.Title = "Repo speaker!";
+    options.Title = "Repo speaker!";!
     options.Theme = ScalarTheme.Default;
 });
 app.UseCors(p => p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
