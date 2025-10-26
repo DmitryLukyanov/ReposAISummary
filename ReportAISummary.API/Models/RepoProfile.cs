@@ -23,8 +23,8 @@ namespace ReportAISummary.API.Models
             Docs)
     {
         public ObjectId Id { get; init; } = ObjectId.GenerateNewId();
-        public IEnumerable<double>? Embedding { get; init; }
-        public IEnumerable<double>? DocsEmbedding { get; init; }
+        public ReadOnlyMemory<float> Embedding { get; init; }
+        public ReadOnlyMemory<float> DocsEmbedding { get; init; }
     }
 
     public class RepoProfileRequest

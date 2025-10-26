@@ -89,7 +89,7 @@ namespace ReportAISummary.API.Utils
 
         public async Task<IEnumerable<RepoProfileResponse>> VectorSearch(
             string indexName,
-            double[] searchVector,
+            ReadOnlyMemory<float> searchVector,
             int limit,
             double minScore = 0.6,
             (
@@ -126,7 +126,7 @@ namespace ReportAISummary.API.Utils
             var vectorSearchPipeline = new EmptyPipelineDefinition<RepoProfileDto>()
                 .VectorSearch(
                     field: e => e.Embedding,
-                    queryVector: new QueryVector(new ReadOnlyMemory<double>(searchVector)),
+                    queryVector: new QueryVector(searchVector),
                     limit: limit,
                     options: new VectorSearchOptions<RepoProfileDto>
                     {
@@ -153,7 +153,7 @@ namespace ReportAISummary.API.Utils
             var vectorDocumentationSearchPipeline = new EmptyPipelineDefinition<RepoProfileDto>()
                  .VectorSearch(
                      field: e => e.DocsEmbedding,
-                     queryVector: new QueryVector(new ReadOnlyMemory<double>(searchVector)),
+                     queryVector: new QueryVector(searchVector),
                      limit: limit,
                      options: new VectorSearchOptions<RepoProfileDto>
                      {

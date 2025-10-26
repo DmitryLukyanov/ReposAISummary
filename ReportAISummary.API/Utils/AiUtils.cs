@@ -1,88 +1,102 @@
-﻿using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Options;
-using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.Connectors.OpenAI;
+﻿using Microsoft.Extensions.Options;
+using OpenAI;
+using OpenAI.Chat;
+using OpenAI.Embeddings;
 using ReportAISummary.API.Config;
+using System.Text;
 
 namespace ReportAISummary.API.Utils
 {
     public class AiUtils(
-        Kernel kernel,
-        IEmbeddingGenerator<string, Embedding<float>> embeddingGenerator,
-        IPromptTemplateFactory promptTemplateFactory)
+        ChatClient chatClient,
+        EmbeddingClient embeddingClient)
     {
+        private readonly ChatClient _chatClient = chatClient;
+        private readonly EmbeddingClient _embeddingClient = embeddingClient;
+
         public static void PrepareServices(IServiceCollection services, IConfiguration config)
         {
-            services.Configure<AISection>(config: config.GetSection(AISection.AISectionConfiguration));
-            services.AddSingleton<Kernel>((sp) =>
-            {
-                var kernelBuilder = Kernel.CreateBuilder();
-                var aiSection = sp.GetRequiredService<IOptions<AISection>>()!.Value;
-                kernelBuilder.AddOpenAIChatClient(
-                    modelId: aiSection.OPENAI_CHAT_MODEL,
-                    apiKey: aiSection.OPENAI_API_KEY);
-#pragma warning disable SKEXP0010 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
-                kernelBuilder.AddOpenAIEmbeddingGenerator(
-                    serviceId: "emb",
-                    modelId: aiSection.OPENAI_EMBED_MODEL,
-                    apiKey: aiSection.OPENAI_API_KEY
-                );
-#pragma warning restore SKEXP0010 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
-
-                return kernelBuilder.Build();
-            });
+            services.Configure<AISection>(config.GetSection(AISection.AISectionConfiguration));
 
             services.AddSingleton(sp =>
             {
-                var kernel = sp.GetRequiredService<Kernel>();
-                return kernel.GetRequiredService<IEmbeddingGenerator<string, Embedding<float>>>();
+                var aiSection = sp.GetRequiredService<IOptions<AISection>>().Value;
+                return new OpenAIClient(aiSection.OPENAI_API_KEY);
             });
-            services.AddSingleton<IPromptTemplateFactory, KernelPromptTemplateFactory>();
+
+            services.AddSingleton<ChatClient>(sp =>
+            {
+                var aiSection = sp.GetRequiredService<IOptions<AISection>>().Value;
+                var rootClient = sp.GetRequiredService<OpenAIClient>();
+                return rootClient.GetChatClient(aiSection.OPENAI_CHAT_MODEL);
+            });
+
+            services.AddSingleton<EmbeddingClient>(sp =>
+            {
+                var aiSection = sp.GetRequiredService<IOptions<AISection>>().Value;
+                var rootClient = sp.GetRequiredService<OpenAIClient>();
+                return rootClient.GetEmbeddingClient(aiSection.OPENAI_EMBED_MODEL);
+            });
 
             services.AddSingleton<AiUtils>();
         }
 
-        public async Task<double[]> GetEmbeddingAsync(string text)
+        public async Task<ReadOnlyMemory<float>> GetEmbeddingAsync(string text, CancellationToken cancellationToken = default)
         {
-            var vectors = await embeddingGenerator.GenerateAsync(value: text);
-            var vector = vectors.Vector.ToArray();
-            var resultedVector = new List<double>(vector.Length);
-            for (int i = 0; i < vector.Length; i++)
-            {
-                resultedVector.Add(vector[i]);
-            }
-            return [.. resultedVector];
-        }
-
-        public async Task<string> SummarizeContent(string content, CancellationToken cancellationToken = default)
-        {
-            var effectiveKernel = kernel.Clone();
-
-            var prompt = """
-                Summarize the following document in a concise manner:
-
-                {{$text}}
-
-                """;
-            var kernelArguments = new KernelArguments(
-                    new OpenAIPromptExecutionSettings()
-                    {
-                        // no need yet
-                        FunctionChoiceBehavior = FunctionChoiceBehavior.None(),
-                        Temperature = 0.1
-                    })
-            {
-                ["text"] = content
-            };
-            var templateValue = promptTemplateFactory.Create(new PromptTemplateConfig(prompt));
-            var renderedTemplate = await templateValue.RenderAsync(kernel, kernelArguments, cancellationToken);
-
-            var summarizedContent = await effectiveKernel.InvokePromptAsync(
-                renderedTemplate,
-                arguments: kernelArguments,
+            var embeddingResponse = await _embeddingClient.GenerateEmbeddingAsync(
+                text,
+                new EmbeddingGenerationOptions 
+                {
+                    Dimensions = 1536
+                },
                 cancellationToken: cancellationToken);
 
-            return summarizedContent.GetValue<string>()!;
+            return embeddingResponse.Value.ToFloats();
+        }
+
+        public async Task<string> SummarizeContent(
+            string content,
+            CancellationToken cancellationToken = default)
+        {
+            var systemInstruction = $$$"""
+                You are a helpful assistant.
+                You summarize documents concisely and preserve key facts.
+                """;
+
+            // TODO: move content in lazy render flow?
+            var userPrompt = $$$"""
+                "Summarize the following document in a concise manner:
+                {{{content}}}
+                """;
+
+            // Build the conversation messages
+            List<ChatMessage> messages =
+            [
+                new SystemChatMessage(systemInstruction),
+                new UserChatMessage(userPrompt)
+            ];
+
+            var options = new ChatCompletionOptions
+            {
+                Temperature = 0.1f,
+                ToolChoice = ChatToolChoice.CreateNoneChoice()
+            };
+
+            ChatCompletion completion = await _chatClient.CompleteChatAsync(
+                messages,
+                options,
+                cancellationToken);
+
+            var sb = new StringBuilder();
+            foreach (var part in completion.Content)
+            {
+                if (!string.IsNullOrWhiteSpace(part.Text))
+                {
+                    sb.AppendLine(part.Text.Trim());
+                }
+            }
+
+            return sb.ToString().TrimEnd();
         }
     }
 }
